@@ -125,7 +125,7 @@ with st.echo(code_location='below'):
             order = sorted(wage_df.rating.unique())
             x_label = 'Company Rating'
         angle = -20 if param == 'company_revenue' else 0
-        data_type = 'quantitative' if param == 'rating' else 'ordinal'
+        data_type = 'quantitative' if param in ['rating', 'skill_num'] else 'ordinal'
         return dict(x1=x1, x2=x2, y1=y1, y2=y2, order=order, x_label=x_label, angle=angle, type=data_type)
 
 
@@ -410,7 +410,7 @@ with st.echo(code_location='below'):
             tooltip=list({'company', 'company_revenue', 'avg_salary', 'job', 'company_size', 'own_type', param})
         )
 
-        if param == 'rating' or param == 'skill_num':
+        if param in ['rating', 'skill_num']:
             line = base.transform_loess(param, 'avg_salary', groupby=['seniority']).mark_line()
         else:
             key = dict(zip(data['order'], range(len(data['order']))))
@@ -502,11 +502,22 @@ with st.echo(code_location='below'):
 
         scatter_data = get_data_for_corr(scatter_param)
         scatter_order, scatter_angle = scatter_data['order'], scatter_data['angle']
-        scatter_x = alt.X(scatter_param, sort=scatter_order, type='ordinal',
+
+        key = dict(zip(scatter_data['order'], range(len(scatter_data['order']))))
+        source = wage_df.assign(order=lambda x: x[scatter_param].map(key))
+        lst = []
+        ### FROM: https://stackoverflow.com/questions/68841230/how-to-replace-the-axis-label-in-altair
+        # Скорее основано, но всё же
+        for i, label in zip(range(len(scatter_data['order'])), scatter_data['order']):
+            lst.append(f"datum.label == {i} ? '{label}'")
+        lst.append("''")
+        axis_labels = ' : '.join(lst)
+        ### END FROM
+        scatter_x = alt.X('order', scale=alt.Scale(domain=[-1, len(scatter_data['order'])]),
                           axis=alt.Axis(labelAngle=scatter_angle, labelColor='#EFEFEF', titleColor='#EFEFEF',
-                                        labelFontSize=16, titleFontSize=20,
-                                        title=scatter_data['x_label'], orient='top')
-                          )
+                                        labelFontSize=14, titleFontSize=20, tickMinStep=1, ticks=True, labelOverlap=False,
+                                        title=scatter_data['x_label'], orient='top', labelExpr=axis_labels))
+
         ### FROM: https://altair-viz.github.io/gallery/scatter_with_histogram.html
         scatter = alt.Chart().mark_circle(opacity=0.5).encode(
             x=scatter_x,
@@ -517,12 +528,9 @@ with st.echo(code_location='below'):
             tooltip=['company', 'company_revenue', 'avg_salary', 'job', 'company_size', 'own_type']
         ).transform_filter(
             brush | multi
-        ).properties(width=650, height=300)
-
-        rule = alt.Chart().mark_rule(color='red').encode(y='mean(avg_salary):Q').transform_filter(brush | multi)
+        ).properties(width=800, height=300)
         ###END FROM
-        all_records_mean = alt.Chart().mark_rule(color='gray').encode(y='mean(avg_salary):Q')
-
+        reg = scatter.transform_regression('order', 'avg_salary', groupby=['seniority']).mark_line()
         hist_data = get_data_for_corr(hist_param)
         hist_order, hist_angle = hist_data['order'], hist_data['angle']
         hist_x = alt.X(hist_param, sort=hist_order, type='ordinal',
@@ -537,13 +545,16 @@ with st.echo(code_location='below'):
                                                                    title='Count of Records')),
                                              color=alt.condition(brush | multi, alt.value('#F66B0E'),
                                                                  alt.value('#205375'))
-                                             ).properties(width=650, height=300).add_selection(brush, multi)
+                                             ).properties(width=800, height=300).add_selection(brush, multi)
 
-        total_chart = alt.vconcat(
-            (scatter + rule + all_records_mean).interactive(),
-            hist,
-            data=wage_df)
-        return total_chart.configure(background='#0e1117')
+        try:
+            total_chart = alt.vconcat(
+                (scatter + reg),
+                hist,
+                data=source)
+            return total_chart.configure(background='#0e1117')
+        except:
+            pass
 
 
     st.header('Show Correlation with filtration', anchor='filter_corr')
