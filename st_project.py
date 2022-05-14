@@ -28,7 +28,7 @@ with st.echo(code_location='below'):
     # Preparing Data
     @st.cache
     def get_dataframe():
-        df = pd.read_csv('data_cleaned_2021.csv').drop(columns='index').drop_duplicates().drop(
+        df = pd.read_csv(r'data_cleaned_2021.csv').drop(columns='index').drop_duplicates().drop(
             columns=['Job Description', 'Job Title'])
         rename_dict = {'seniority_by_title': 'seniority',
                        'Avg Salary(K)': "avg_salary",
@@ -367,62 +367,79 @@ with st.echo(code_location='below'):
         rank_plot = bokeh_ranking(selector, highlight, over)
         st.bokeh_chart(rank_plot)
 
-
     # Correlation
-    def sns_wage_corr(param):
+    def sns_wage_corr(param, corr_plot_type):
         data = get_data_for_corr(param)
         sns.set_theme(context='notebook', style='dark')
         sns.set(rc={'axes.facecolor': '#0e1117', 'figure.facecolor': '#0e1117'})
-        sns.stripplot(
-            data=wage_df, x=param, y="avg_salary", hue="seniority",
-            dodge=False, order=data['order'], alpha=0.4)
-        sns.pointplot(
-            data=wage_df,
-            x=param,
-            y='avg_salary',
-            hue='seniority',
-            order=data['order'],
-            hue_order=['Other', 'Senior'],
-            scale=0.9
-        ).set(xlabel=data['x_label'], ylabel='Salary (K)')
-
-        ax.tick_params(axis='y', colors='#EFEFEF')
-        plt.xticks(rotation=-data['angle'])
-        plt.text(data['x1'], data['y1'], "Senior", horizontalalignment='left', size='medium', color='#da8251',
-                 weight='semibold')
-        plt.text(data['x2'], data['y2'], "Other", horizontalalignment='left', size='medium', color='#4c72b0',
-                 weight='semibold')
-
-
-    def alt_wage_corr(param):
-        data = get_data_for_corr(param)
-        x = alt.X(param, sort=data['order'], type=data['type'],
-                  axis=alt.Axis(labelAngle=data['angle'], labelColor='#EFEFEF', titleColor='#EFEFEF',
-                                labelFontSize=16, titleFontSize=20, title=data['x_label'])
-                  )
-        y = alt.Y('avg_salary', axis=alt.Axis(labelColor='#EFEFEF', titleColor='#EFEFEF',
-                                              labelFontSize=12, titleFontSize=20, title='Salary (K)')
-                  )
-        base = alt.Chart(wage_df).mark_circle(opacity=0.5).encode(
-            x, y,
-            alt.Color('seniority', legend=alt.Legend(
-                title='Seniority', orient="top")),
-            tooltip=list({'company', 'company_revenue', 'avg_salary', 'job', 'company_size', 'own_type', param})
-        )
-
-        if param in ['rating', 'skill_num']:
-            line = base.transform_loess(param, 'avg_salary', groupby=['seniority']).mark_line()
+        if corr_plot_type == 'Scatter Plot':
+            sns.stripplot(
+                data=wage_df, x=param, y="avg_salary", hue="seniority",
+                dodge=False, order=data['order'], alpha=0.4)
+            sns.pointplot(
+                data=wage_df,
+                x=param,
+                y='avg_salary',
+                hue='seniority',
+                order=data['order'],
+                hue_order=['Other', 'Senior'],
+                scale=0.9
+            ).set(xlabel=data['x_label'], ylabel='Salary (K)')
+            ax.tick_params(axis='y', colors='#EFEFEF')
+            plt.xticks(rotation=-data['angle'])
+            plt.text(data['x1'], data['y1'], "Senior", horizontalalignment='left', size='medium', color='#da8251',
+                     weight='semibold')
+            plt.text(data['x2'], data['y2'], "Other", horizontalalignment='left', size='medium', color='#4c72b0',
+                     weight='semibold')
         else:
-            key = dict(zip(data['order'], range(len(data['order']))))
-            source = wage_df.assign(order=lambda x: x[param].map(key))
-            line = alt.Chart(source).mark_line().encode(
-                x=alt.X('order', axis=None),
-                y=alt.Y('mean(avg_salary)'),
-                color=alt.Color('seniority')
+            order = data['order'][::-1] if param in ('Company Revenue', 'Company Size') else wage_df[param].unique()
+            sns.boxplot(data=wage_df, x='avg_salary', y=param, order=order
+                        ).set(ylabel=param, xlabel='Salary (K)')
+            ax.tick_params(axis='y', colors='#EFEFEF')
+
+
+
+    def alt_wage_corr(param, corr_plot_type):
+        data = get_data_for_corr(param)
+        if corr_plot_type == 'Scatter Plot':
+            x = alt.X(param, sort=data['order'], type=data['type'],
+                      axis=alt.Axis(labelAngle=data['angle'], labelColor='#EFEFEF', titleColor='#EFEFEF',
+                                    labelFontSize=16, titleFontSize=20, title=data['x_label'])
+                      )
+            y = alt.Y('avg_salary', axis=alt.Axis(labelColor='#EFEFEF', titleColor='#EFEFEF',
+                                                  labelFontSize=12, titleFontSize=20, title='Salary (K)')
+                      )
+            base = alt.Chart(wage_df).mark_circle(opacity=0.5).encode(
+                x, y,
+                alt.Color('seniority', legend=alt.Legend(
+                    title='Seniority', orient="top")),
+                tooltip=['company', 'company_revenue', 'avg_salary', 'job', 'company_size', 'own_type', param]
             )
 
-        return (base + line).configure(background='#0e1117').properties(width=750, height=500)
+            if param in ['rating', 'skill_num']:
+                line = base.transform_loess(param, 'avg_salary', groupby=['seniority']).mark_line()
+            else:
+                key = dict(zip(data['order'], range(len(data['order']))))
+                source = wage_df.assign(order=lambda x: x[param].map(key))
+                line = alt.Chart(source).mark_line().encode(
+                    x=alt.X('order', axis=None),
+                    y=alt.Y('mean(avg_salary)'),
+                    color=alt.Color('seniority')
+                )
 
+            return (base + line).configure(background='#0e1117').properties(width=750, height=500)
+        else:
+            order = data['order'][::-1] if param in ('Company Revenue', 'Company Size') else wage_df[param].unique()
+            y = alt.Y(f'{param}:O', sort=order,
+                      axis=alt.Axis(labelAngle=0, labelColor='#EFEFEF', titleColor='#EFEFEF',
+                                    labelFontSize=16, titleFontSize=20)
+                      )
+            x = alt.X('avg_salary:Q', axis=alt.Axis(labelColor='#EFEFEF', titleColor='#EFEFEF',
+                                                  labelFontSize=12, titleFontSize=20)
+                      )
+            boxes = alt.Chart(wage_df).mark_boxplot(size=50, outliers=True).encode(y=y, x=x,
+                                                                                   color=alt.Color(param, legend=None))
+            return boxes.configure(background='#0e1117').properties(width=750, height=700)
 
     def bokeh_wage_corr(param):
         data = get_data_for_corr(param)
@@ -471,16 +488,24 @@ with st.echo(code_location='below'):
 
 
     st.header('Show correlation with Means', anchor='mean_corr')
-    st.text('Plot types: график рассеяния с линией тренда')
+    st.text('Plot types: график рассеяния с линией тренда, ящик с усами')
 
-    corr = st.radio("Choose parameter to correlate.",
-                    ('Number of skills', 'Company Revenue', 'Company Size', 'Company Rating'))
+    corr_plot_type = st.radio("Choose the desired type of plot:",
+                    ('Scatter Plot', 'Box Plot'))
+    if corr_plot_type == 'Scatter Plot':
+        corr_options = ('Number of skills', 'Company Revenue', 'Company Size', 'Company Rating')
+        corr_libs_list = ("Seaborn", "Altair", "Bokeh")
+    else:
+        corr_options = ('Company Revenue', 'Company Size', 'Job Title', 'Degree', 'Ownership')
+        corr_libs_list = ("Seaborn", "Altair")
 
-    corr_parameter = get_categorical_parameter(corr)
-    corr_lib = st.radio("Plotting library", ("Seaborn", "Altair", "Bokeh"))
+    corr_radio = st.radio("Choose parameter to correlate:", corr_options)
+    corr_parameter = get_categorical_parameter(corr_radio)
+    corr_lib = st.radio("Plotting library:", corr_libs_list)
+
     if corr_lib == 'Seaborn':
         fig, ax = plt.subplots(figsize=(10, 5))
-        sns_wage_corr(corr_parameter)
+        sns_wage_corr(corr_parameter, corr_plot_type)
         customize_axis(ax)
         ax.legend_ = None
         if corr_parameter == 'rating':
@@ -489,7 +514,7 @@ with st.echo(code_location='below'):
         ax.autoscale()
         st.pyplot(fig, True)
     elif corr_lib == 'Altair':
-        alt_corr_chart = alt_wage_corr(corr_parameter)
+        alt_corr_chart = alt_wage_corr(corr_parameter, corr_plot_type)
         st.altair_chart(alt_corr_chart.interactive())
     elif corr_lib == 'Bokeh':
         st.bokeh_chart(bokeh_wage_corr(corr_parameter))
